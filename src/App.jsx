@@ -18,10 +18,9 @@ import * as Y from "yjs";
 import { WebrtcProvider } from "y-webrtc";
 import { throttle } from "lodash";
 
-// --- MULTIPLAYER ENGINE ---
+// --- MULTIPLAYER CORE ---
 const ydoc = new Y.Doc();
 
-// --- THEMES ---
 const themes = {
   cork: { board: "#a67c52", lines: "#8d643f", panel: "#2c1e12", group: "rgba(0,0,0,0.2)" }
 };
@@ -50,7 +49,7 @@ const GhostCursor = ({ x, y, name, color, isPinging }) => (
   </div>
 );
 
-// --- EVIDENCE NODE ---
+// --- CUSTOM EVIDENCE NODE ---
 const EvidenceNode = ({ id, data, selected }) => {
   const isGroup = data.type === 'group';
   const isNote = data.type === 'note';
@@ -126,21 +125,19 @@ function Board() {
 
   // --- ROOM SETUP ---
   useEffect(() => {
-    const name = localStorage.getItem("detectiveName") || prompt("Enter Codename:") || "Agent-" + Math.floor(Math.random()*900);
+    const name = localStorage.getItem("detectiveName") || "Agent-" + Math.floor(Math.random()*900);
     const room = prompt("Enter CASE ID (Must be identical for all teammates):", "Default-Case");
     
     setUserName(name);
     setRoomID(room);
     localStorage.setItem("detectiveName", name);
 
-    // Initialize Provider with NAT traversal (STUN)
-    const p = new WebrtcProvider(`detective-v73-${room}`, ydoc, {
+    const p = new WebrtcProvider(`detective-v74-${room}`, ydoc, {
       signaling: ["wss://signaling.yjs.dev"],
       peerOpts: {
         iceServers: [
           { urls: "stun:stun.l.google.com:19302" },
-          { urls: "stun:stun1.l.google.com:19302" },
-          { urls: "stun:stun2.l.google.com:19302" }
+          { urls: "stun:stun1.l.google.com:19302" }
         ]
       }
     });
@@ -150,6 +147,19 @@ function Board() {
 
     return () => p.destroy();
   }, []);
+
+  // --- RENAME HANDLER ---
+  const handleRename = () => {
+    const newName = prompt("Change your codename:", userName);
+    if (newName && newName.trim()) {
+      setUserName(newName);
+      localStorage.setItem("detectiveName", newName);
+      if (provider) {
+        provider.awareness.setLocalStateField("user", { name: newName });
+        ydoc.getArray("log").push([`[${new Date().toLocaleTimeString()}] Detective renamed to: ${newName}`]);
+      }
+    }
+  };
 
   // --- SYNC LOGIC ---
   useEffect(() => {
@@ -229,7 +239,7 @@ function Board() {
              type === 'boardText' ? { width: 300, height: 60 } : { width: 200, height: 100 }
     };
     ydoc.getMap("nodes").set(id, node);
-    ydoc.getArray("log").push([`[${new Date().toLocaleTimeString()}] ${userName} added ${type}`]);
+    ydoc.getArray("log").push([`[${new Date().toLocaleTimeString()}] ${userName} pinned ${type}`]);
   };
 
   const onNodeClick = useCallback((_, node) => {
@@ -272,9 +282,17 @@ function Board() {
   return (
     <div onMouseMove={onMouseMove} style={{ display: "flex", width: "100vw", height: "100vh", backgroundColor: themes.cork.board, overflow: 'hidden' }}>
       <div style={{ width: "320px", backgroundColor: themes.cork.panel, color: "#ecf0f1", padding: "15px", display: "flex", flexDirection: "column", zIndex: 10 }}>
-        <h2 style={{ fontSize: '16px', fontWeight: '900', marginBottom: '5px' }}>CRIME BOARD v7.3</h2>
-        <div style={{ fontSize: '9px', color: connStatus === "Connected" ? '#2ecc71' : '#e74c3c', marginBottom: '15px', fontWeight: 'bold' }}>
-          ● COMM-LINK: {connStatus} | {peerCount} PEERS | CASE: {roomID}
+        <h2 style={{ fontSize: '16px', fontWeight: '900', marginBottom: '5px' }}>CRIME BOARD v7.4</h2>
+        
+        {/* IDENTITY & STATUS */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', background: 'rgba(0,0,0,0.3)', padding: '10px', borderRadius: '6px', marginBottom: '15px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <span style={{ fontSize: '11px', fontWeight: 'bold' }}>ID: {userName}</span>
+                <button onClick={handleRename} style={{ border: '1px solid #555', background: 'transparent', color: '#ccc', fontSize: '9px', padding: '2px 5px', borderRadius: '3px', cursor: 'pointer' }}>RENAME</button>
+            </div>
+            <div style={{ fontSize: '9px', color: connStatus === "Connected" ? '#2ecc71' : '#e74c3c', fontWeight: 'bold' }}>
+              ● {connStatus} | {peerCount} PEERS
+            </div>
         </div>
 
         <button onClick={toggleTimeline} style={{ ...btnStyle, backgroundColor: isTimelineView ? "#e67e22" : "#8e44ad" }}>{isTimelineView ? "EXIT TIMELINE" : "⏳ TIMELINE MODE"}</button>
