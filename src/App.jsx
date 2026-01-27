@@ -19,9 +19,8 @@ import { WebrtcProvider } from "y-webrtc";
 import { throttle } from "lodash";
 
 // --- MULTIPLAYER CORE ---
-// Using a specific room name ensures everyone lands on the same board
 const ydoc = new Y.Doc();
-const roomName = "detective-hq-master-v5"; 
+const roomName = "detective-hq-master-v6"; 
 const provider = new WebrtcProvider(roomName, ydoc);
 const sharedNodes = ydoc.getMap("nodes");
 const sharedEdges = ydoc.getMap("edges");
@@ -106,7 +105,9 @@ const EvidenceNode = ({ id, data, selected }) => {
     <div onContextMenu={onAssign} onDoubleClick={onToggleStatus} style={{ position: 'relative', width: '100%', height: '100%' }}>
       <Handle type="source" position={Position.Top} style={{ opacity: 0 }} />
       <Handle type="target" position={Position.Top} style={{ opacity: 0 }} />
-      <NodeResizer color="#d63031" isVisible={selected} minWidth={100} minHeight={50} keepAspectRatio={isPhysical} />
+      
+      {/* NodeResizer: removed keepAspectRatio to allow freeform tight fit */}
+      <NodeResizer color="#d63031" isVisible={selected} minWidth={50} minHeight={50} />
       
       {/* THE RED PUSH PIN */}
       {!isBoardText && (
@@ -124,14 +125,17 @@ const EvidenceNode = ({ id, data, selected }) => {
       {!isBoardText && <div style={{ position: 'absolute', top: -35, right: 0, background: statusColor, color: 'black', padding: '2px 6px', borderRadius: '4px', fontSize: '9px', fontWeight: 'bold', zIndex: 10 }}>{data.status || 'OPEN'}</div>}
 
       <div style={{ 
-        width: '100%', height: '100%', padding: isNote ? '15px' : '0px', 
+        width: '100%', height: '100%', 
+        padding: isNote ? '15px' : '0px', // ZERO padding for photos
         background: isPhysical ? 'transparent' : (isNote ? "#fff9c4" : (isBoardText ? 'transparent' : 'white')),
         boxShadow: (isBoardText || isPhysical) ? 'none' : "0 8px 15px rgba(0,0,0,0.2)",
         display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', 
         overflow: 'hidden', border: data.isDrawingTarget ? `4px solid #d63031` : 'none',
         fontFamily: data.globalFont, borderRadius: isPhysical ? 0 : '4px'
       }}>
-        {data.image && <img src={data.image} alt="clue" style={{ width: '100%', height: '100%', objectFit: 'contain', pointerEvents: 'none' }} />}
+        {/* IMAGE: Tight fit using width/height 100% and display block */}
+        {data.image && <img src={data.image} alt="clue" style={{ width: '100%', height: '100%', display: 'block', pointerEvents: 'none' }} />}
+        
         {isNote && <div style={{ fontSize: '14px', color: '#333', textAlign: 'center' }}>{data.label}</div>}
         {isBoardText && <div style={{ color: '#fff', fontSize: `${dynamicFontSize}px`, fontWeight: '900', textAlign: 'center', textTransform: 'uppercase', textShadow: '2px 2px 4px rgba(0,0,0,0.5)' }}>{data.label}</div>}
         {data.timestamp && <div style={{ position: 'absolute', bottom: 5, right: 5, fontSize: '9px', background: 'rgba(0,0,0,0.6)', color: 'white', padding: '2px 4px', borderRadius: '3px' }}>📅 {data.timestamp}</div>}
@@ -308,7 +312,7 @@ function Board() {
       
       {/* --- SIDEBAR --- */}
       <div style={{ width: "320px", backgroundColor: themes[currentTheme].panel, color: "#ecf0f1", padding: "15px", display: "flex", flexDirection: "column", zIndex: 10 }}>
-        <h2 style={{ fontSize: '16px', fontWeight: '900', marginBottom: '5px' }}>CRIME BOARD v5.0</h2>
+        <h2 style={{ fontSize: '16px', fontWeight: '900', marginBottom: '5px' }}>CRIME BOARD v5.1</h2>
         
         {/* IDENTITY SECTION WITH RENAME BUTTON */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'rgba(0,0,0,0.3)', padding: '8px', borderRadius: '6px', marginBottom: '10px' }}>
