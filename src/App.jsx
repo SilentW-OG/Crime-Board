@@ -19,8 +19,9 @@ import { WebrtcProvider } from "y-webrtc";
 import { throttle } from "lodash";
 
 // --- MULTIPLAYER CORE ---
+// Unified Room Name ensures all users see each other regardless of code updates.
 const ydoc = new Y.Doc();
-const roomName = "detective-hq-master-v6"; 
+const roomName = "detective-hq-shared-nexus"; 
 const provider = new WebrtcProvider(roomName, ydoc);
 const sharedNodes = ydoc.getMap("nodes");
 const sharedEdges = ydoc.getMap("edges");
@@ -31,12 +32,6 @@ const sharedChat = ydoc.getArray("chat");
 const themes = {
   cork: { board: "#a67c52", lines: "#8d643f", panel: "#2c1e12", group: "rgba(0,0,0,0.2)" },
   midnight: { board: "#1a1c1e", lines: "#2d2f31", panel: "#0d0e10", group: "rgba(255,255,255,0.05)" }
-};
-
-const fonts = {
-  standard: "Inter, sans-serif",
-  typewriter: "'Courier New', Courier, monospace",
-  handwritten: "'Cursive', 'Brush Script MT', cursive"
 };
 
 const btnStyle = { 
@@ -70,11 +65,9 @@ const EvidenceNode = ({ id, data, selected }) => {
   const isBoardText = data.type === 'boardText';
   const isPhysical = data.type === 'physical';
   
-  // Dynamic font sizing for "Board Text" headings
   const liveWidth = useStore((s) => s.nodeInternals.get(id)?.width);
   const dynamicFontSize = isBoardText ? (liveWidth ? liveWidth / 5.5 : 36) : 16;
 
-  // Right-click to Assign
   const onAssign = (e) => {
     e.preventDefault();
     e.stopPropagation();
@@ -83,7 +76,6 @@ const EvidenceNode = ({ id, data, selected }) => {
     sharedNodes.set(id, { ...current, data: { ...current.data, assignedTo: newAssign } });
   };
 
-  // Double-click to Toggle Status
   const onToggleStatus = (e) => {
     e.stopPropagation();
     const current = sharedNodes.get(id);
@@ -105,11 +97,8 @@ const EvidenceNode = ({ id, data, selected }) => {
     <div onContextMenu={onAssign} onDoubleClick={onToggleStatus} style={{ position: 'relative', width: '100%', height: '100%' }}>
       <Handle type="source" position={Position.Top} style={{ opacity: 0 }} />
       <Handle type="target" position={Position.Top} style={{ opacity: 0 }} />
-      
-      {/* NodeResizer: removed keepAspectRatio to allow freeform tight fit */}
       <NodeResizer color="#d63031" isVisible={selected} minWidth={50} minHeight={50} />
       
-      {/* THE RED PUSH PIN */}
       {!isBoardText && (
         <div style={{ 
           width: "14px", height: "14px", backgroundColor: "#c0392b", borderRadius: "50%", 
@@ -118,24 +107,18 @@ const EvidenceNode = ({ id, data, selected }) => {
         }} />
       )}
 
-      {/* Assignment Badge */}
       {data.assignedTo && <div style={{ position: 'absolute', top: -35, left: 0, background: '#e67e22', color: 'white', padding: '2px 6px', borderRadius: '4px', fontSize: '9px', fontWeight: 'bold', zIndex: 10 }}>🕵️ {data.assignedTo}</div>}
-      
-      {/* Status Badge */}
       {!isBoardText && <div style={{ position: 'absolute', top: -35, right: 0, background: statusColor, color: 'black', padding: '2px 6px', borderRadius: '4px', fontSize: '9px', fontWeight: 'bold', zIndex: 10 }}>{data.status || 'OPEN'}</div>}
 
       <div style={{ 
-        width: '100%', height: '100%', 
-        padding: isNote ? '15px' : '0px', // ZERO padding for photos
+        width: '100%', height: '100%', padding: isNote ? '15px' : '0px', 
         background: isPhysical ? 'transparent' : (isNote ? "#fff9c4" : (isBoardText ? 'transparent' : 'white')),
         boxShadow: (isBoardText || isPhysical) ? 'none' : "0 8px 15px rgba(0,0,0,0.2)",
         display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', 
         overflow: 'hidden', border: data.isDrawingTarget ? `4px solid #d63031` : 'none',
-        fontFamily: data.globalFont, borderRadius: isPhysical ? 0 : '4px'
+        fontFamily: 'Inter, sans-serif', borderRadius: isPhysical ? 0 : '4px'
       }}>
-        {/* IMAGE: Tight fit using width/height 100% and display block */}
         {data.image && <img src={data.image} alt="clue" style={{ width: '100%', height: '100%', display: 'block', pointerEvents: 'none' }} />}
-        
         {isNote && <div style={{ fontSize: '14px', color: '#333', textAlign: 'center' }}>{data.label}</div>}
         {isBoardText && <div style={{ color: '#fff', fontSize: `${dynamicFontSize}px`, fontWeight: '900', textAlign: 'center', textTransform: 'uppercase', textShadow: '2px 2px 4px rgba(0,0,0,0.5)' }}>{data.label}</div>}
         {data.timestamp && <div style={{ position: 'absolute', bottom: 5, right: 5, fontSize: '9px', background: 'rgba(0,0,0,0.6)', color: 'white', padding: '2px 4px', borderRadius: '3px' }}>📅 {data.timestamp}</div>}
@@ -161,11 +144,10 @@ function Board() {
   const [activeColor, setActiveColor] = useState("#d63031");
   const [isTimelineView, setIsTimelineView] = useState(false);
   
-  const { setCenter, fitView, toObject } = useReactFlow();
+  const { fitView } = useReactFlow();
   const chatEndRef = useRef(null);
   const logEndRef = useRef(null);
 
-  // --- INITIAL IDENTITY SETUP ---
   useEffect(() => {
     const storedName = localStorage.getItem("detectiveName");
     const name = storedName || prompt("Enter Detective Name:") || "Agent-" + Math.floor(Math.random()*100);
@@ -174,24 +156,21 @@ function Board() {
     provider.awareness.setLocalStateField("user", { name });
   }, []);
 
-  // --- HELPER TO ADD LOGS ---
   const addLog = (text) => {
     sharedLog.push([`[${new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}] ${userName}: ${text}`]);
     if (sharedLog.length > 30) sharedLog.delete(0, 1);
   };
 
-  // --- RENAME FEATURE ---
   const handleRename = () => {
     const newName = prompt("Enter new codename:", userName);
     if (newName && newName.trim() !== "") {
-      addLog(`changed handle from "${userName}" to "${newName}"`);
+      addLog(`changed handle to "${newName}"`);
       setUserName(newName);
       localStorage.setItem("detectiveName", newName);
       provider.awareness.setLocalStateField("user", { name: newName });
     }
   };
 
-  // --- SYNC ENGINE ---
   useEffect(() => {
     const syncNodes = () => setNodes(Array.from(sharedNodes.values()).map(n => ({...n, data: {...n.data, localUserName: userName}})));
     const syncEdges = () => setEdges(Array.from(sharedEdges.values()));
@@ -201,7 +180,6 @@ function Board() {
     sharedNodes.observe(syncNodes); sharedEdges.observe(syncEdges);
     sharedChat.observe(syncChat); sharedLog.observe(syncLog);
     
-    // Peer Awareness (Cursors)
     provider.awareness.on("change", () => {
       const states = provider.awareness.getStates();
       const cursors = {};
@@ -222,7 +200,6 @@ function Board() {
     }
   }, [userName]);
 
-  // --- MOUSE TRACKING & PING ---
   const onMouseMove = useCallback(throttle((e) => {
     const cur = provider.awareness.getLocalState()?.cursor;
     provider.awareness.setLocalStateField("cursor", { x: e.clientX - 320, y: e.clientY, isPinging: cur?.isPinging });
@@ -246,7 +223,6 @@ function Board() {
     setEdges(eds => { const next = applyEdgeChanges(chs, eds); next.forEach(e => sharedEdges.set(e.id, e)); return next; });
   }, []);
 
-  // --- ADD NODE LOGIC ---
   const addNode = (type, label = "", image = null) => {
     const id = `${type}-${Date.now()}`;
     const time = (type !== 'group' && type !== 'boardText') ? prompt("Timestamp (YYYY-MM-DD):") : null;
@@ -260,7 +236,6 @@ function Board() {
     addLog(`Pinned ${type} "${label || 'New Clue'}"`);
   };
 
-  // --- CLICK & CONNECT LOGIC ---
   const onNodeClick = useCallback((_, node) => {
     if (!isDrawMode || node.data.type === 'group') return;
     if (!drawSource) {
@@ -284,7 +259,6 @@ function Board() {
     }
   }, [isDrawMode, drawSource, activeColor]);
 
-  // --- TIMELINE MODE ---
   const toggleTimeline = () => {
     if (!isTimelineView) {
       const sorted = nodes.filter(n => n.data.timestamp).sort((a, b) => new Date(a.data.timestamp) - new Date(b.data.timestamp));
@@ -312,9 +286,9 @@ function Board() {
       
       {/* --- SIDEBAR --- */}
       <div style={{ width: "320px", backgroundColor: themes[currentTheme].panel, color: "#ecf0f1", padding: "15px", display: "flex", flexDirection: "column", zIndex: 10 }}>
-        <h2 style={{ fontSize: '16px', fontWeight: '900', marginBottom: '5px' }}>CRIME BOARD v5.1</h2>
+        <h2 style={{ fontSize: '16px', fontWeight: '900', marginBottom: '15px' }}>CRIME BOARD v6.1</h2>
         
-        {/* IDENTITY SECTION WITH RENAME BUTTON */}
+        {/* IDENTITY SECTION */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'rgba(0,0,0,0.3)', padding: '8px', borderRadius: '6px', marginBottom: '10px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <div style={{ width: '10px', height: '10px', borderRadius: '50%', backgroundColor: peerCount > 0 ? '#2ecc71' : '#f1c40f' }} />
