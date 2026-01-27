@@ -19,10 +19,18 @@ import { WebrtcProvider } from "y-webrtc";
 import { throttle } from "lodash";
 
 // --- MULTIPLAYER CORE ---
-// Unified Room Name ensures all users see each other regardless of code updates.
 const ydoc = new Y.Doc();
-const roomName = "detective-hq-shared-nexus"; 
-const provider = new WebrtcProvider(roomName, ydoc);
+const roomName = "detective-hq-nexus-v7-final"; // Updated room name to force a fresh session
+
+// We use multiple signaling servers to ensure someone is always "listening"
+const provider = new WebrtcProvider(roomName, ydoc, {
+  signaling: [
+    "wss://y-webrtc-signaling-eu.herokuapp.com",
+    "wss://y-webrtc-signaling-us.herokuapp.com",
+    "wss://signaling.yjs.dev"
+  ]
+});
+
 const sharedNodes = ydoc.getMap("nodes");
 const sharedEdges = ydoc.getMap("edges");
 const sharedLog = ydoc.getArray("log");
@@ -134,6 +142,7 @@ function Board() {
   const [edges, setEdges] = useState([]);
   const [peerCursors, setPeerCursors] = useState({});
   const [peerCount, setPeerCount] = useState(0);
+  const [connStatus, setConnStatus] = useState("Connecting...");
   const [chat, setChat] = useState([]);
   const [log, setLog] = useState([]);
   const [msg, setMsg] = useState("");
@@ -148,9 +157,10 @@ function Board() {
   const chatEndRef = useRef(null);
   const logEndRef = useRef(null);
 
+  // --- INITIAL IDENTITY ---
   useEffect(() => {
     const storedName = localStorage.getItem("detectiveName");
-    const name = storedName || prompt("Enter Detective Name:") || "Agent-" + Math.floor(Math.random()*100);
+    const name = storedName || "Agent-" + Math.floor(Math.random()*900 + 100);
     setUserName(name);
     localStorage.setItem("detectiveName", name);
     provider.awareness.setLocalStateField("user", { name });
@@ -158,28 +168,30 @@ function Board() {
 
   const addLog = (text) => {
     sharedLog.push([`[${new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}] ${userName}: ${text}`]);
-    if (sharedLog.length > 30) sharedLog.delete(0, 1);
   };
 
   const handleRename = () => {
-    const newName = prompt("Enter new codename:", userName);
-    if (newName && newName.trim() !== "") {
-      addLog(`changed handle to "${newName}"`);
+    const newName = prompt("Change Codename:", userName);
+    if (newName && newName.trim()) {
+      addLog(`renamed to ${newName}`);
       setUserName(newName);
       localStorage.setItem("detectiveName", newName);
       provider.awareness.setLocalStateField("user", { name: newName });
     }
   };
 
+  // --- MULTIPLAYER SYNC ---
   useEffect(() => {
     const syncNodes = () => setNodes(Array.from(sharedNodes.values()).map(n => ({...n, data: {...n.data, localUserName: userName}})));
     const syncEdges = () => setEdges(Array.from(sharedEdges.values()));
-    const syncChat = () => { setChat(sharedChat.toArray()); setTimeout(() => chatEndRef.current?.scrollIntoView({behavior:'smooth'}), 100); };
-    const syncLog = () => { setLog(sharedLog.toArray()); setTimeout(() => logEndRef.current?.scrollIntoView({behavior:'smooth'}), 100); };
+    const syncChat = () => { setChat(sharedChat.toArray()); setTimeout(() => chatEndRef.current?.scrollIntoView({behavior:'smooth'}), 50); };
+    const syncLog = () => { setLog(sharedLog.toArray()); setTimeout(() => logEndRef.current?.scrollIntoView({behavior:'smooth'}), 50); };
 
     sharedNodes.observe(syncNodes); sharedEdges.observe(syncEdges);
     sharedChat.observe(syncChat); sharedLog.observe(syncLog);
     
+    provider.on("status", ({ status }) => setConnStatus(status === "connected" ? "Connected" : "Reconnecting..."));
+
     provider.awareness.on("change", () => {
       const states = provider.awareness.getStates();
       const cursors = {};
@@ -201,15 +213,15 @@ function Board() {
   }, [userName]);
 
   const onMouseMove = useCallback(throttle((e) => {
-    const cur = provider.awareness.getLocalState()?.cursor;
-    provider.awareness.setLocalStateField("cursor", { x: e.clientX - 320, y: e.clientY, isPinging: cur?.isPinging });
-  }, 50), []);
+    provider.awareness.setLocalStateField("cursor", { x: e.clientX - 320, y: e.clientY });
+  }, 40), []);
 
   useEffect(() => {
     const handlePing = (e) => {
       if (e.code === "Space") {
-        provider.awareness.setLocalStateField("cursor", { ...provider.awareness.getLocalState().cursor, isPinging: true });
-        setTimeout(() => provider.awareness.setLocalStateField("cursor", { ...provider.awareness.getLocalState().cursor, isPinging: false }), 800);
+        const cur = provider.awareness.getLocalState().cursor;
+        provider.awareness.setLocalStateField("cursor", { ...cur, isPinging: true });
+        setTimeout(() => provider.awareness.setLocalStateField("cursor", { ...cur, isPinging: false }), 800);
       }
     };
     window.addEventListener("keydown", handlePing); return () => window.removeEventListener("keydown", handlePing);
@@ -233,7 +245,7 @@ function Board() {
              type === 'boardText' ? { width: 300, height: 60 } : { width: 200, height: 100 }
     };
     sharedNodes.set(id, node);
-    addLog(`Pinned ${type} "${label || 'New Clue'}"`);
+    addLog(`added ${type} clue`);
   };
 
   const onNodeClick = useCallback((_, node) => {
@@ -252,7 +264,6 @@ function Board() {
           markerEnd: { type: MarkerType.ArrowClosed, color: activeColor },
           style: { stroke: activeColor, strokeWidth: 4 },
         });
-        addLog(`Linked clues: ${sharedNodes.get(drawSource).data.label} -> ${node.data.label}`);
       }
       setDrawSource(null);
       setNodes(nds => nds.map(n => ({ ...n, data: { ...n.data, isDrawingTarget: false } })));
@@ -286,14 +297,15 @@ function Board() {
       
       {/* --- SIDEBAR --- */}
       <div style={{ width: "320px", backgroundColor: themes[currentTheme].panel, color: "#ecf0f1", padding: "15px", display: "flex", flexDirection: "column", zIndex: 10 }}>
-        <h2 style={{ fontSize: '16px', fontWeight: '900', marginBottom: '15px' }}>CRIME BOARD v6.1</h2>
+        <h2 style={{ fontSize: '16px', fontWeight: '900', marginBottom: '5px' }}>CRIME BOARD v7.1</h2>
         
+        <div style={{ fontSize: '9px', color: connStatus === "Connected" ? '#2ecc71' : '#e74c3c', marginBottom: '15px', fontWeight: 'bold' }}>
+          ● COMM-LINK: {connStatus} ({peerCount} PEERS)
+        </div>
+
         {/* IDENTITY SECTION */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'rgba(0,0,0,0.3)', padding: '8px', borderRadius: '6px', marginBottom: '10px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <div style={{ width: '10px', height: '10px', borderRadius: '50%', backgroundColor: peerCount > 0 ? '#2ecc71' : '#f1c40f' }} />
-            <span style={{ fontSize: '11px', fontWeight: 'bold' }}>{userName}</span>
-          </div>
+          <span style={{ fontSize: '11px', fontWeight: 'bold' }}>ID: {userName}</span>
           <button onClick={handleRename} style={{ border: '1px solid #555', background: 'transparent', color: '#ccc', fontSize: '9px', padding: '2px 5px', borderRadius: '3px', cursor: 'pointer' }}>RENAME</button>
         </div>
 
