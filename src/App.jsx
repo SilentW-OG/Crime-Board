@@ -19,7 +19,7 @@ import { WebrtcProvider } from "y-webrtc";
 import { WebsocketProvider } from "y-websocket"; 
 import { throttle } from "lodash";
 
-// --- GLOBAL SHARED DATA ---
+// --- GLOBAL DOCUMENT DATA ---
 const ydoc = new Y.Doc();
 
 const themes = {
@@ -37,7 +37,7 @@ const inputStyle = {
   backgroundColor: "#1f2937", color: "white", fontSize: "12px", marginBottom: "10px"
 };
 
-// --- GHOST CURSOR ---
+// --- MULTIPLAYER CURSOR ---
 const GhostCursor = ({ x, y, name, color }) => (
   <div style={{ position: 'absolute', left: x, top: y, pointerEvents: 'none', zIndex: 1000, transition: 'transform 0.1s ease-out' }}>
     <svg width="24" height="24" viewBox="0 0 24 24" fill={color}><path d="M7 2l12 11.2l-5.8 0.5l3.3 7.3l-2.2 1l-3.2-7.1l-4.1 4z" /></svg>
@@ -149,21 +149,21 @@ function Board() {
   const chatEndRef = useRef(null);
   const logEndRef = useRef(null);
 
-  // --- HYBRID CONNECTION ENGINE ---
+  // --- HYBRID CONNECTION STRATEGY ---
   useEffect(() => {
     const name = localStorage.getItem("detectiveName") || "Agent-" + Math.floor(Math.random()*900);
-    const room = prompt("Enter CASE ID:", "CASE-001") || "CASE-001";
+    const room = prompt("Enter CASE ID:", "CASE-ALPHA") || "CASE-ALPHA";
     setUserName(name); setRoomID(room);
     localStorage.setItem("detectiveName", name);
 
-    // 1. WebRTC Provider (P2P Speed)
-    const webrtc = new WebrtcProvider(`cb-v83-${room}`, ydoc, {
-      signaling: ["wss://y-webrtc-signaling-eu.herokuapp.com", "wss://signaling.yjs.dev"],
+    // Primary: WebRTC (Fast)
+    const webrtc = new WebrtcProvider(`crime-v84-${room}`, ydoc, {
+      signaling: ["wss://y-webrtc-signaling-us.herokuapp.com", "wss://signaling.yjs.dev"],
       peerOpts: { iceServers: [{ urls: "stun:stun.l.google.com:19302" }] }
     });
 
-    // 2. WebSocket Provider (Server Fallback - bypasses strict firewalls)
-    const ws = new WebsocketProvider("wss://demos.yjs.dev", `cb-v83-${room}`, ydoc);
+    // Secondary: WebSocket (Bypass firewalls)
+    const ws = new WebsocketProvider("wss://demos.yjs.dev", `crime-v84-${room}`, ydoc);
 
     webrtc.awareness.setLocalStateField("user", { name });
     setProvider(webrtc);
@@ -200,7 +200,7 @@ function Board() {
     });
   }, [provider, userName]);
 
-  // --- TIMELINE FILTER ---
+  // --- TIMELINE ENGINE ---
   const filteredNodes = useMemo(() => {
     if (!isTimelineMode) return nodes;
     return nodes
@@ -234,17 +234,17 @@ function Board() {
     const id = `${type}-${Date.now()}`;
     let extraData = {};
     if (type === 'suspect') {
-        extraData = { alibi: prompt("Suspect Alibi:"), associates: prompt("Known Associates:"), image };
+        extraData = { alibi: prompt("Alibi:"), associates: prompt("Known Associates:"), image };
     }
     const node = {
       id, type: 'evidence', position: { x: 400, y: 300 },
-      data: { label, type, image, status: 'OPEN', timestamp: (type !== 'group' && type !== 'boardText') ? prompt("Date Evidence Collected (YYYY-MM-DD):") : null, ...extraData },
+      data: { label, type, image, status: 'OPEN', timestamp: (type !== 'group' && type !== 'boardText') ? prompt("Date Collected (YYYY-MM-DD):", "2026-01-01") : null, ...extraData },
       style: type === 'group' ? { width: 400, height: 400, background: themes.cork.group } : 
              type === 'suspect' ? { width: 300, height: 180 } :
              type === 'boardText' ? { width: 300, height: 80 } : { width: 200, height: 100 }
     };
     ydoc.getMap("nodes").set(id, node);
-    ydoc.getArray("log").push([{ text: `Agent ${userName} added ${type}: ${label}`, time: new Date().toLocaleTimeString() }]);
+    ydoc.getArray("log").push([{ text: `New ${type}: ${label}`, time: new Date().toLocaleTimeString() }]);
   };
 
   const onNodeClick = useCallback((_, node) => {
@@ -256,7 +256,7 @@ function Board() {
       if (drawSource !== node.id) {
         const id = `e-${Date.now()}`;
         ydoc.getMap("edges").set(id, {
-          id, source: drawSource, target: node.id, label: prompt("Connection:"),
+          id, source: drawSource, target: node.id, label: prompt("Connection Reason:"),
           labelStyle: { fill: 'white', fontWeight: 700, fontSize: '10px' },
           labelBgStyle: { fill: "#d63031", fillOpacity: 0.9, rx: 4 },
           markerEnd: { type: MarkerType.ArrowClosed, color: "#d63031" },
@@ -271,20 +271,20 @@ function Board() {
   return (
     <div onMouseMove={onMouseMove} style={{ display: "flex", width: "100vw", height: "100vh", backgroundColor: themes.cork.board, overflow: 'hidden' }}>
       
-      {/* SIDEBAR */}
-      <div style={{ width: "320px", backgroundColor: themes.cork.panel, color: "#ecf0f1", padding: "15px", display: "flex", flexDirection: "column", zIndex: 10 }}>
-        <h2 style={{ fontSize: '16px', fontWeight: '900', marginBottom: '5px' }}>CRIME BOARD v8.3</h2>
+      {/* SIDEBAR UI */}
+      <div style={{ width: "320px", backgroundColor: themes.cork.panel, color: "#ecf0f1", padding: "15px", display: "flex", flexDirection: "column", zIndex: 10, boxShadow: '5px 0 15px rgba(0,0,0,0.4)' }}>
+        <h2 style={{ fontSize: '16px', fontWeight: '900', marginBottom: '5px' }}>CRIME BOARD v8.4</h2>
         
-        <div style={{ background: 'rgba(0,0,0,0.5)', padding: '10px', borderRadius: '6px', marginBottom: '15px' }}>
+        <div style={{ background: 'rgba(0,0,0,0.5)', padding: '10px', borderRadius: '6px', marginBottom: '15px', borderLeft: `4px solid ${connStatus === "CONNECTED" ? "#2ecc71" : "#e74c3c"}` }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <span style={{ fontSize: '12px', fontWeight: 'bold' }}>🕵️ {userName}</span>
-                <span style={{ fontSize: '10px', color: connStatus === "CONNECTED" ? '#2ecc71' : '#e74c3c' }}>{connStatus}</span>
+                <span style={{ fontSize: '10px', fontWeight: '900' }}>{connStatus}</span>
             </div>
-            <div style={{ fontSize: '9px', color: '#888' }}>PEERS: {peerCount} | CASE: {roomID}</div>
+            <div style={{ fontSize: '9px', color: '#888', marginTop: '4px' }}>CASE ID: {roomID} | PEERS: {peerCount}</div>
         </div>
 
         <button onClick={() => setIsTimelineMode(!isTimelineMode)} style={{ ...btnStyle, backgroundColor: isTimelineMode ? '#2ecc71' : '#8e44ad' }}>
-            {isTimelineMode ? "EXIT TIMELINE" : "⏳ TIMELINE MODE"}
+            {isTimelineMode ? "EXIT TIMELINE" : "⏳ TIMELINE VIEW"}
         </button>
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '5px', marginBottom: '10px' }}>
@@ -292,7 +292,7 @@ function Board() {
           <button onClick={() => addNode('note', prompt("Note:"))} style={btnStyle}>+ NOTE</button>
           <button onClick={() => addNode('group', prompt("Zone Name:"))} style={{ ...btnStyle, backgroundColor: '#8e44ad' }}>+ ZONE</button>
           <button onClick={() => addNode('suspect', prompt("Suspect Name:"))} style={{ ...btnStyle, backgroundColor: '#2c3e50' }}>+ SUSPECT</button>
-          <label style={{ ...btnStyle, backgroundColor: "#3b82f6", gridColumn: 'span 2' }}> PHOTO
+          <label style={{ ...btnStyle, backgroundColor: "#3b82f6", gridColumn: 'span 2' }}> ADD IMAGE EVIDENCE
             <input type="file" hidden onChange={(e) => {
                const r = new FileReader(); r.onload = (ev) => addNode('physical', 'Evidence', ev.target.result);
                r.readAsDataURL(e.target.files[0]);
@@ -303,18 +303,18 @@ function Board() {
         <button onClick={() => setIsDrawMode(!isDrawMode)} style={{ ...btnStyle, backgroundColor: isDrawMode ? "#d63031" : "#444" }}>🖋️ DRAW LEAD</button>
 
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '10px', minHeight: 0 }}>
-          <div style={{ height: '100px', background: 'rgba(0,0,0,0.4)', borderRadius: '4px', overflowY: 'auto', padding: '8px' }}>
-             <div style={{ fontSize: '10px', color: '#888', marginBottom: '5px' }}>INVESTIGATION LOG</div>
-             {log.map((l, i) => (<div key={i} style={{ fontSize: '9px', color: '#aaa', borderBottom: '1px solid #333' }}>[{l.time}] {l.text}</div>))}
+          <div style={{ height: '100px', background: 'rgba(0,0,0,0.4)', borderRadius: '4px', overflowY: 'auto', padding: '8px', border: '1px solid #333' }}>
+             <div style={{ fontSize: '10px', color: '#888', marginBottom: '5px', textTransform: 'uppercase' }}>Investigation Log</div>
+             {log.map((l, i) => (<div key={i} style={{ fontSize: '9px', color: '#aaa', padding: '2px 0' }}>• {l.text}</div>))}
              <div ref={logEndRef} />
           </div>
 
-          <div style={{ flexGrow: 1, display: 'flex', flexDirection: 'column', background: 'rgba(0,0,0,0.4)', borderRadius: '4px', overflow: 'hidden' }}>
+          <div style={{ flexGrow: 1, display: 'flex', flexDirection: 'column', background: 'rgba(0,0,0,0.6)', borderRadius: '4px', overflow: 'hidden' }}>
             <div style={{ flexGrow: 1, overflowY: 'auto', padding: '8px' }}>
-              {chat.map((c, i) => (<div key={i} style={{ fontSize: '11px', marginBottom: '5px' }}><b style={{ color: '#e67e22' }}>{c.sender}: </b>{c.text}</div>))}
+              {chat.map((c, i) => (<div key={i} style={{ fontSize: '11px', marginBottom: '8px' }}><b style={{ color: '#e67e22' }}>{c.sender}: </b>{c.text}</div>))}
               <div ref={chatEndRef} />
             </div>
-            <input style={{ ...inputStyle, marginBottom: 0 }} placeholder="Message..." value={msg} onChange={e => setMsg(e.target.value)} onKeyDown={(e) => {
+            <input style={{ ...inputStyle, marginBottom: 0, borderRadius: 0, border: 'none', borderTop: '1px solid #444' }} placeholder="Send secure intel..." value={msg} onChange={e => setMsg(e.target.value)} onKeyDown={(e) => {
               if (e.key === 'Enter' && msg.trim()) { ydoc.getArray("chat").push([{ sender: userName, text: msg }]); setMsg(""); }
             }} />
           </div>
@@ -324,7 +324,7 @@ function Board() {
       <div style={{ flexGrow: 1, position: 'relative' }}>
         {Object.entries(peerCursors).map(([id, c]) => <GhostCursor key={id} {...c} color="#e67e22" />)}
         <ReactFlow nodes={filteredNodes} edges={edges} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onNodeClick={onNodeClick} nodeTypes={nodeTypes} fitView>
-          <Background color="#8d643f" variant="lines" /><MiniMap /><Controls />
+          <Background color="#8d643f" variant="lines" /><MiniMap style={{ background: '#2c1e12' }} /><Controls />
         </ReactFlow>
       </div>
     </div>
