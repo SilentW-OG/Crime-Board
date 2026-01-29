@@ -16,10 +16,10 @@ import ReactFlow, {
 import "reactflow/dist/style.css";
 import * as Y from "yjs";
 import { WebrtcProvider } from "y-webrtc";
-import { WebsocketProvider } from "y-websocket"; // Fallback engine
+import { WebsocketProvider } from "y-websocket"; 
 import { throttle } from "lodash";
 
-// --- GLOBAL DOC ---
+// --- GLOBAL SHARED DATA ---
 const ydoc = new Y.Doc();
 
 const themes = {
@@ -134,7 +134,7 @@ function Board() {
   const [edges, setEdges] = useState([]);
   const [peerCursors, setPeerCursors] = useState({});
   const [peerCount, setPeerCount] = useState(0);
-  const [connStatus, setConnStatus] = useState("SIGNALING...");
+  const [connStatus, setConnStatus] = useState("SCANNING...");
   const [chat, setChat] = useState([]);
   const [log, setLog] = useState([]);
   const [msg, setMsg] = useState("");
@@ -149,31 +149,21 @@ function Board() {
   const chatEndRef = useRef(null);
   const logEndRef = useRef(null);
 
-  // --- RECOVERY INITIALIZATION ---
+  // --- HYBRID CONNECTION ENGINE ---
   useEffect(() => {
     const name = localStorage.getItem("detectiveName") || "Agent-" + Math.floor(Math.random()*900);
-    const room = prompt("Enter CASE ID:", "CASE-ZERO") || "CASE-ZERO";
+    const room = prompt("Enter CASE ID:", "CASE-001") || "CASE-001";
     setUserName(name); setRoomID(room);
     localStorage.setItem("detectiveName", name);
 
-    // Try WebRTC with aggressive STUN list
-    const webrtc = new WebrtcProvider(`cb-v82-${room}`, ydoc, {
-      signaling: [
-        "wss://y-webrtc-signaling-eu.herokuapp.com",
-        "wss://y-webrtc-signaling-us.herokuapp.com",
-        "wss://signaling.yjs.dev"
-      ],
-      peerOpts: {
-        iceServers: [
-          { urls: "stun:stun.l.google.com:19302" },
-          { urls: "stun:stun1.l.google.com:19302" },
-          { urls: "stun:stun.voiparound.com:3478" }
-        ]
-      }
+    // 1. WebRTC Provider (P2P Speed)
+    const webrtc = new WebrtcProvider(`cb-v83-${room}`, ydoc, {
+      signaling: ["wss://y-webrtc-signaling-eu.herokuapp.com", "wss://signaling.yjs.dev"],
+      peerOpts: { iceServers: [{ urls: "stun:stun.l.google.com:19302" }] }
     });
 
-    // Fallback WebSocket (Often bypasses firewall issues)
-    const ws = new WebsocketProvider("wss://demos.yjs.dev", `cb-v82-${room}`, ydoc);
+    // 2. WebSocket Provider (Server Fallback - bypasses strict firewalls)
+    const ws = new WebsocketProvider("wss://demos.yjs.dev", `cb-v83-${room}`, ydoc);
 
     webrtc.awareness.setLocalStateField("user", { name });
     setProvider(webrtc);
@@ -244,17 +234,17 @@ function Board() {
     const id = `${type}-${Date.now()}`;
     let extraData = {};
     if (type === 'suspect') {
-        extraData = { alibi: prompt("Alibi:"), associates: prompt("Associates:"), image };
+        extraData = { alibi: prompt("Suspect Alibi:"), associates: prompt("Known Associates:"), image };
     }
     const node = {
       id, type: 'evidence', position: { x: 400, y: 300 },
-      data: { label, type, image, status: 'OPEN', timestamp: (type !== 'group' && type !== 'boardText') ? prompt("Date (YYYY-MM-DD):") : null, ...extraData },
+      data: { label, type, image, status: 'OPEN', timestamp: (type !== 'group' && type !== 'boardText') ? prompt("Date Evidence Collected (YYYY-MM-DD):") : null, ...extraData },
       style: type === 'group' ? { width: 400, height: 400, background: themes.cork.group } : 
              type === 'suspect' ? { width: 300, height: 180 } :
              type === 'boardText' ? { width: 300, height: 80 } : { width: 200, height: 100 }
     };
     ydoc.getMap("nodes").set(id, node);
-    ydoc.getArray("log").push([{ text: `Node Added: ${label || type}`, time: new Date().toLocaleTimeString() }]);
+    ydoc.getArray("log").push([{ text: `Agent ${userName} added ${type}: ${label}`, time: new Date().toLocaleTimeString() }]);
   };
 
   const onNodeClick = useCallback((_, node) => {
@@ -266,7 +256,7 @@ function Board() {
       if (drawSource !== node.id) {
         const id = `e-${Date.now()}`;
         ydoc.getMap("edges").set(id, {
-          id, source: drawSource, target: node.id, label: prompt("Link:"),
+          id, source: drawSource, target: node.id, label: prompt("Connection:"),
           labelStyle: { fill: 'white', fontWeight: 700, fontSize: '10px' },
           labelBgStyle: { fill: "#d63031", fillOpacity: 0.9, rx: 4 },
           markerEnd: { type: MarkerType.ArrowClosed, color: "#d63031" },
@@ -283,25 +273,25 @@ function Board() {
       
       {/* SIDEBAR */}
       <div style={{ width: "320px", backgroundColor: themes.cork.panel, color: "#ecf0f1", padding: "15px", display: "flex", flexDirection: "column", zIndex: 10 }}>
-        <h2 style={{ fontSize: '16px', fontWeight: '900', marginBottom: '5px' }}>CRIME BOARD v8.2</h2>
+        <h2 style={{ fontSize: '16px', fontWeight: '900', marginBottom: '5px' }}>CRIME BOARD v8.3</h2>
         
         <div style={{ background: 'rgba(0,0,0,0.5)', padding: '10px', borderRadius: '6px', marginBottom: '15px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <span style={{ fontSize: '12px', fontWeight: 'bold' }}>🕵️ {userName}</span>
                 <span style={{ fontSize: '10px', color: connStatus === "CONNECTED" ? '#2ecc71' : '#e74c3c' }}>{connStatus}</span>
             </div>
-            <div style={{ fontSize: '9px', color: '#888' }}>PEERS ONLINE: {peerCount} | ROOM: {roomID}</div>
+            <div style={{ fontSize: '9px', color: '#888' }}>PEERS: {peerCount} | CASE: {roomID}</div>
         </div>
 
-        <button onClick={() => setIsTimelineMode(!isTimelineMode)} style={{ ...btnStyle, backgroundColor: '#8e44ad' }}>
+        <button onClick={() => setIsTimelineMode(!isTimelineMode)} style={{ ...btnStyle, backgroundColor: isTimelineMode ? '#2ecc71' : '#8e44ad' }}>
             {isTimelineMode ? "EXIT TIMELINE" : "⏳ TIMELINE MODE"}
         </button>
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '5px', marginBottom: '10px' }}>
-          <button onClick={() => addNode('boardText', prompt("Headline:"))} style={{ ...btnStyle, backgroundColor: '#c0392b' }}>+ HEADING</button>
+          <button onClick={() => addNode('boardText', prompt("Heading:"))} style={{ ...btnStyle, backgroundColor: '#c0392b' }}>+ HEADING</button>
           <button onClick={() => addNode('note', prompt("Note:"))} style={btnStyle}>+ NOTE</button>
           <button onClick={() => addNode('group', prompt("Zone Name:"))} style={{ ...btnStyle, backgroundColor: '#8e44ad' }}>+ ZONE</button>
-          <button onClick={() => addNode('suspect', prompt("Suspect:"))} style={{ ...btnStyle, backgroundColor: '#2c3e50' }}>+ SUSPECT</button>
+          <button onClick={() => addNode('suspect', prompt("Suspect Name:"))} style={{ ...btnStyle, backgroundColor: '#2c3e50' }}>+ SUSPECT</button>
           <label style={{ ...btnStyle, backgroundColor: "#3b82f6", gridColumn: 'span 2' }}> PHOTO
             <input type="file" hidden onChange={(e) => {
                const r = new FileReader(); r.onload = (ev) => addNode('physical', 'Evidence', ev.target.result);
