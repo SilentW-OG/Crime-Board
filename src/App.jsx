@@ -1,4 +1,4 @@
-import React, { useCallback, useState, useEffect, useRef } from "react";
+import React, { useCallback, useState, useEffect, useRef, useMemo } from "react";
 import ReactFlow, {
   Background,
   Controls,
@@ -133,13 +133,14 @@ function Board() {
   const [edges, setEdges] = useState([]);
   const [peerCursors, setPeerCursors] = useState({});
   const [peerCount, setPeerCount] = useState(0);
-  const [connStatus, setConnStatus] = useState("Initializing...");
+  const [connStatus, setConnStatus] = useState("Offline");
   const [chat, setChat] = useState([]);
   const [log, setLog] = useState([]);
   const [msg, setMsg] = useState("");
   const [userName, setUserName] = useState("");
   const [roomID, setRoomID] = useState("");
   const [isDrawMode, setIsDrawMode] = useState(false);
+  const [isTimelineMode, setIsTimelineMode] = useState(false);
   const [drawSource, setDrawSource] = useState(null);
   const [provider, setProvider] = useState(null);
   
@@ -147,37 +148,55 @@ function Board() {
   const chatEndRef = useRef(null);
   const logEndRef = useRef(null);
 
-  // --- CONNECTIVITY FIX ---
+  // --- "DEEP DIG" CONNECTIVITY FIX ---
   useEffect(() => {
     const name = localStorage.getItem("detectiveName") || "Agent-" + Math.floor(Math.random()*900);
-    const room = prompt("Enter CASE ID:", "CASE-001") || "CASE-001";
+    const room = prompt("Enter CASE ID (Must be identical for all peers):", "MURDER-MYSTERY") || "GLOBAL-CASE";
     setUserName(name); setRoomID(room);
     localStorage.setItem("detectiveName", name);
 
-    const p = new WebrtcProvider(`detective-v78-${room}`, ydoc, {
+    const p = new WebrtcProvider(`crimeboard-v8-${room}`, ydoc, {
       signaling: [
         "wss://y-webrtc-signaling-eu.herokuapp.com",
         "wss://y-webrtc-signaling-us.herokuapp.com",
-        "wss://signaling.yjs.dev"
+        "wss://signaling.yjs.dev",
+        "wss://y-webrtc.fly.dev"
       ],
-      peerOpts: { iceServers: [{ urls: "stun:stun.l.google.com:19302" }] }
+      peerOpts: {
+        iceServers: [
+          { urls: "stun:stun.l.google.com:19302" },
+          { urls: "stun:stun1.l.google.com:19302" },
+          { urls: "stun:stun2.l.google.com:19302" },
+          { urls: "stun:global.stun.twilio.com:3478" }
+        ]
+      }
     });
 
     p.awareness.setLocalStateField("user", { name });
     setProvider(p);
+
     return () => p.destroy();
   }, []);
 
-  const handleRename = () => {
-    const newName = prompt("Change Codename:", userName);
-    if (newName && newName.trim()) {
-      setUserName(newName);
-      localStorage.setItem("detectiveName", newName);
-      if (provider) provider.awareness.setLocalStateField("user", { name: newName });
-    }
-  };
+  // --- TIMELINE LOGIC ---
+  const filteredNodes = useMemo(() => {
+    if (!isTimelineMode) return nodes;
+    
+    // Sort logic: Get nodes with dates, sort them, then arrange them in a line
+    return nodes
+      .filter(n => n.data.type !== 'group')
+      .sort((a, b) => {
+        const dateA = new Date(a.data.timestamp || 0);
+        const dateB = new Date(b.data.timestamp || 0);
+        return dateA - dateB;
+      })
+      .map((n, index) => ({
+        ...n,
+        position: { x: index * 350, y: 300 }, // Auto-align on horizontal axis
+        draggable: false // Lock movement in timeline mode
+      }));
+  }, [nodes, isTimelineMode]);
 
-  // --- SYNC ENGINE ---
   useEffect(() => {
     if (!provider) return;
     const sharedNodes = ydoc.getMap("nodes");
@@ -193,7 +212,8 @@ function Board() {
     sharedNodes.observe(syncNodes); sharedEdges.observe(syncEdges); 
     sharedChat.observe(syncChat); sharedLog.observe(syncLog);
 
-    provider.on("status", ({ status }) => setConnStatus(status === "connected" ? "Connected" : "Scanning..."));
+    provider.on("status", ({ status }) => setConnStatus(status === "connected" ? "ONLINE" : "CONNECTING..."));
+    
     provider.awareness.on("change", () => {
       const states = provider.awareness.getStates();
       const cursors = {}; let count = 0;
@@ -211,12 +231,13 @@ function Board() {
   }, 40), [provider]);
 
   const onNodesChange = useCallback((chs) => {
+    if (isTimelineMode) return; // Prevent layout jitter during timeline
     setNodes(nds => { 
         const next = applyNodeChanges(chs, nds); 
         next.forEach(n => ydoc.getMap("nodes").set(n.id, n)); 
         return next; 
     });
-  }, []);
+  }, [isTimelineMode]);
 
   const onEdgesChange = useCallback((chs) => {
     setEdges(eds => { 
@@ -234,7 +255,7 @@ function Board() {
     }
     const node = {
       id, type: 'evidence', position: { x: 400, y: 300 },
-      data: { label, type, image, status: 'OPEN', timestamp: (type !== 'group' && type !== 'boardText') ? prompt("Date:") : null, ...extraData },
+      data: { label, type, image, status: 'OPEN', timestamp: (type !== 'group' && type !== 'boardText') ? prompt("Date of Evidence (YYYY-MM-DD):", "2026-01-01") : null, ...extraData },
       style: type === 'group' ? { width: 400, height: 400, background: themes.cork.group } : 
              type === 'suspect' ? { width: 300, height: 180 } :
              type === 'boardText' ? { width: 300, height: 80 } : { width: 200, height: 100 }
@@ -252,7 +273,7 @@ function Board() {
       if (drawSource !== node.id) {
         const id = `e-${Date.now()}`;
         ydoc.getMap("edges").set(id, {
-          id, source: drawSource, target: node.id, label: prompt("Link reason:"),
+          id, source: drawSource, target: node.id, label: prompt("Connection reason:"),
           labelStyle: { fill: 'white', fontWeight: 700, fontSize: '10px' },
           labelBgStyle: { fill: "#d63031", fillOpacity: 0.9, rx: 4 },
           markerEnd: { type: MarkerType.ArrowClosed, color: "#d63031" },
@@ -268,25 +289,27 @@ function Board() {
     <div onMouseMove={onMouseMove} style={{ display: "flex", width: "100vw", height: "100vh", backgroundColor: themes.cork.board, overflow: 'hidden' }}>
       
       {/* SIDEBAR */}
-      <div style={{ width: "320px", backgroundColor: themes.cork.panel, color: "#ecf0f1", padding: "15px", display: "flex", flexDirection: "column", zIndex: 10 }}>
-        <h2 style={{ fontSize: '16px', fontWeight: '900', marginBottom: '5px' }}>CRIME BOARD v7.8</h2>
+      <div style={{ width: "320px", backgroundColor: themes.cork.panel, color: "#ecf0f1", padding: "15px", display: "flex", flexDirection: "column", zIndex: 10, boxShadow: '5px 0 15px rgba(0,0,0,0.3)' }}>
+        <h2 style={{ fontSize: '16px', fontWeight: '900', marginBottom: '5px', letterSpacing: '1px' }}>CRIME BOARD v8.0</h2>
         
-        <div style={{ background: 'rgba(0,0,0,0.3)', padding: '10px', borderRadius: '6px', marginBottom: '15px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '5px' }}>
-                <span style={{ fontSize: '11px', fontWeight: 'bold' }}>ID: {userName}</span>
-                <button onClick={handleRename} style={{ fontSize: '9px', background: 'transparent', border: '1px solid #555', color: '#ccc', borderRadius: '3px' }}>RENAME</button>
+        <div style={{ background: 'rgba(0,0,0,0.5)', padding: '10px', borderRadius: '6px', marginBottom: '15px', borderLeft: `4px solid ${connStatus === "ONLINE" ? '#2ecc71' : '#e74c3c'}` }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: '12px', fontWeight: 'bold', color: '#fff' }}>🕵️ {userName}</span>
+                <span style={{ fontSize: '10px', color: connStatus === "ONLINE" ? '#2ecc71' : '#e74c3c', fontWeight: '900' }}>{connStatus}</span>
             </div>
-            <div style={{ fontSize: '9px', color: connStatus === "Connected" ? '#2ecc71' : '#e74c3c', fontWeight: 'bold' }}>● {connStatus} | {peerCount} PEERS</div>
+            <div style={{ fontSize: '10px', color: '#aaa', marginTop: '4px' }}>CASE ID: <b style={{color:'#eee'}}>{roomID}</b> | {peerCount} PEERS</div>
         </div>
 
-        <button onClick={() => alert("Filtering by timestamp...")} style={{ ...btnStyle, backgroundColor: '#8e44ad' }}>⏳ TIMELINE MODE</button>
+        <button onClick={() => setIsTimelineMode(!isTimelineMode)} style={{ ...btnStyle, backgroundColor: isTimelineMode ? '#2ecc71' : '#8e44ad', border: isTimelineMode ? '2px solid white' : 'none' }}>
+            {isTimelineMode ? "🔓 EXIT TIMELINE" : "⏳ ENTER TIMELINE MODE"}
+        </button>
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '5px', marginBottom: '10px' }}>
-          <button onClick={() => addNode('boardText', prompt("Heading:"))} style={{ ...btnStyle, backgroundColor: '#c0392b' }}>+ HEADING</button>
+          <button onClick={() => addNode('boardText', prompt("Title:"))} style={{ ...btnStyle, backgroundColor: '#c0392b' }}>+ HEADING</button>
           <button onClick={() => addNode('note', prompt("Note:"))} style={btnStyle}>+ NOTE</button>
           <button onClick={() => addNode('group', prompt("Zone Name:"))} style={{ ...btnStyle, backgroundColor: '#8e44ad' }}>+ ZONE</button>
           <button onClick={() => addNode('suspect', prompt("Suspect Name:"))} style={{ ...btnStyle, backgroundColor: '#2c3e50' }}>+ SUSPECT</button>
-          <label style={{ ...btnStyle, backgroundColor: "#3b82f6", gridColumn: 'span 2' }}> PHOTO
+          <label style={{ ...btnStyle, backgroundColor: "#3b82f6", gridColumn: 'span 2' }}> 📷 ADD PHOTO EVIDENCE
             <input type="file" hidden onChange={(e) => {
                const r = new FileReader(); r.onload = (ev) => addNode('physical', 'Evidence', ev.target.result);
                r.readAsDataURL(e.target.files[0]);
@@ -294,31 +317,44 @@ function Board() {
           </label>
         </div>
         
-        <button onClick={() => setIsDrawMode(!isDrawMode)} style={{ ...btnStyle, backgroundColor: isDrawMode ? "#d63031" : "#444" }}>🖋️ DRAW LEAD</button>
+        <button onClick={() => setIsDrawMode(!isDrawMode)} style={{ ...btnStyle, backgroundColor: isDrawMode ? "#d63031" : "#444" }}>
+            {isDrawMode ? "STOP DRAWING" : "🖋️ DRAW LEAD"}
+        </button>
 
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '10px', minHeight: 0 }}>
-          <div style={{ height: '120px', background: 'rgba(0,0,0,0.4)', borderRadius: '4px', overflowY: 'auto', padding: '8px' }}>
-             <div style={{ fontSize: '10px', color: '#888', marginBottom: '5px' }}>INVESTIGATION LOG</div>
-             {log.map((l, i) => (<div key={i} style={{ fontSize: '9px', color: '#aaa', borderBottom: '1px solid #333', padding: '2px 0' }}>[{l.time}] {l.text}</div>))}
+          <div style={{ height: '100px', background: 'rgba(0,0,0,0.4)', borderRadius: '4px', overflowY: 'auto', padding: '8px', border: '1px solid #333' }}>
+             <div style={{ fontSize: '9px', color: '#888', marginBottom: '5px', textTransform: 'uppercase' }}>Investigation Log</div>
+             {log.map((l, i) => (<div key={i} style={{ fontSize: '9px', color: '#ccc', padding: '2px 0' }}>• {l.text}</div>))}
              <div ref={logEndRef} />
           </div>
 
-          <div style={{ flexGrow: 1, display: 'flex', flexDirection: 'column', background: 'rgba(0,0,0,0.4)', borderRadius: '4px', overflow: 'hidden' }}>
-            <div style={{ flexGrow: 1, overflowY: 'auto', padding: '8px' }}>
-              {chat.map((c, i) => (<div key={i} style={{ fontSize: '11px', marginBottom: '5px' }}><b style={{ color: '#e67e22' }}>{c.sender}: </b>{c.text}</div>))}
+          <div style={{ flexGrow: 1, display: 'flex', flexDirection: 'column', background: 'rgba(0,0,0,0.6)', borderRadius: '4px', overflow: 'hidden' }}>
+            <div style={{ flexGrow: 1, overflowY: 'auto', padding: '10px' }}>
+              {chat.map((c, i) => (<div key={i} style={{ fontSize: '11px', marginBottom: '8px', lineHeight: '1.4' }}><b style={{ color: '#e67e22' }}>{c.sender}: </b><span style={{color: '#ddd'}}>{c.text}</span></div>))}
               <div ref={chatEndRef} />
             </div>
-            <input style={{ ...inputStyle, marginBottom: 0 }} placeholder="Secure message..." value={msg} onChange={e => setMsg(e.target.value)} onKeyDown={(e) => {
+            <input style={{ ...inputStyle, marginBottom: 0, borderRadius: 0, border: 'none', borderTop: '1px solid #444' }} placeholder="Send secure message..." value={msg} onChange={e => setMsg(e.target.value)} onKeyDown={(e) => {
               if (e.key === 'Enter' && msg.trim()) { ydoc.getArray("chat").push([{ sender: userName, text: msg }]); setMsg(""); }
             }} />
           </div>
         </div>
       </div>
 
+      {/* BOARD AREA */}
       <div style={{ flexGrow: 1, position: 'relative' }}>
         {Object.entries(peerCursors).map(([id, c]) => <GhostCursor key={id} {...c} color="#e67e22" />)}
-        <ReactFlow nodes={nodes} edges={edges} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onNodeClick={onNodeClick} nodeTypes={nodeTypes} fitView>
-          <Background color="#8d643f" variant="lines" /><MiniMap /><Controls />
+        <ReactFlow 
+            nodes={filteredNodes} 
+            edges={edges} 
+            onNodesChange={onNodesChange} 
+            onEdgesChange={onEdgesChange} 
+            onNodeClick={onNodeClick} 
+            nodeTypes={nodeTypes} 
+            fitView
+        >
+          <Background color="#8d643f" variant="lines" />
+          <MiniMap style={{ background: '#2c1e12' }} maskColor="rgba(0,0,0,0.4)" />
+          <Controls />
         </ReactFlow>
       </div>
     </div>
