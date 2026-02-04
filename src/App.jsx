@@ -33,10 +33,15 @@ const EvidenceNode = ({ id, data, selected }) => {
   const isPhysical = data.type === 'physical';
   const isSuspect = data.type === 'suspect';
   
-  const liveWidth = useStore((s) => s.nodeInternals.get(id)?.width);
-  const dynamicFontSize = isBoardText ? (liveWidth ? liveWidth / 5.5 : 36) : 16;
+  // Heading Text logic: Check both Width and Height
+  const liveNode = useStore((s) => s.nodeInternals.get(id));
+  const liveWidth = liveNode?.width;
+  const liveHeight = liveNode?.height;
 
-  // Double click to toggle status handled via callback now
+  const dynamicFontSize = isBoardText 
+    ? Math.min((liveWidth || 300) / 6, (liveHeight || 80) * 0.8) 
+    : 16;
+
   const onToggleStatus = (e) => {
     e.stopPropagation();
     if (data.onToggleStatus) data.onToggleStatus(id);
@@ -50,6 +55,11 @@ const EvidenceNode = ({ id, data, selected }) => {
   const onUploadClick = (e) => {
     e.stopPropagation();
     if (data.onSuspectImage) data.onSuspectImage();
+  };
+
+  const onMagnify = (e) => {
+    e.stopPropagation();
+    if (data.onMagnify && data.image) data.onMagnify(data.image);
   };
 
   const statusColor = data.status === 'SOLVED' ? '#2ecc71' : data.status === 'DEAD END' ? '#e74c3c' : '#f1c40f';
@@ -69,7 +79,7 @@ const EvidenceNode = ({ id, data, selected }) => {
       <Handle type="source" position={Position.Bottom} id="bottom" style={{ opacity: 0, bottom: 0 }} />
       <Handle type="target" position={Position.Bottom} id="bottom" style={{ opacity: 0, bottom: 0 }} />
 
-      <NodeResizer color="#d63031" isVisible={selected} minWidth={100} minHeight={100} />
+      <NodeResizer color="#d63031" isVisible={selected} minWidth={100} minHeight={50} />
       
       {/* Visual Pin */}
       {!isBoardText && <div style={{ width: "14px", height: "14px", backgroundColor: "#c0392b", borderRadius: "50%", position: "absolute", top: "-7px", left: "50%", transform: "translateX(-50%)", zIndex: 100, border: '1px solid rgba(0,0,0,0.3)', boxShadow: '0 2px 4px rgba(0,0,0,0.3)' }} />}
@@ -79,10 +89,18 @@ const EvidenceNode = ({ id, data, selected }) => {
 
       {/* Edit Button (Pencil) */}
       {(isSuspect || isNote || isBoardText) && (
-        <div onClick={onEditClick} style={{ 
-          position: 'absolute', top: 5, right: 5, zIndex: 50, cursor: 'pointer', 
+        <div onClick={onEditClick} title="Edit Text" style={{ 
+          position: 'absolute', top: isBoardText ? -20 : 5, right: isBoardText ? 0 : 5, zIndex: 50, cursor: 'pointer', 
           background: 'rgba(0,0,0,0.5)', borderRadius: '4px', padding: '2px 5px', color: 'white', fontSize: '10px' 
         }}>✎</div>
+      )}
+
+      {/* Magnify Button (Glass) */}
+      {data.image && (
+         <div onClick={onMagnify} title="Inspect Evidence" style={{ 
+            position: 'absolute', top: 5, left: 5, zIndex: 50, cursor: 'pointer', 
+            background: 'rgba(0,0,0,0.5)', borderRadius: '4px', padding: '2px 5px', color: 'white', fontSize: '10px' 
+          }}>🔍</div>
       )}
 
       <div style={{ 
@@ -91,7 +109,8 @@ const EvidenceNode = ({ id, data, selected }) => {
         color: isSuspect ? 'white' : 'black',
         boxShadow: (isBoardText || isPhysical) ? 'none' : "0 8px 15px rgba(0,0,0,0.2)",
         display: 'flex', flexDirection: 'column', 
-        overflow: 'hidden', border: data.isDrawingTarget ? `4px solid #d63031` : (isSuspect ? '2px solid #555' : 'none'),
+        overflow: isBoardText ? 'visible' : 'hidden', 
+        border: data.isDrawingTarget ? `4px solid #d63031` : (isSuspect ? '2px solid #555' : 'none'),
         borderRadius: isPhysical ? 0 : '4px',
         fontFamily: 'Inter, sans-serif'
       }}>
@@ -117,7 +136,25 @@ const EvidenceNode = ({ id, data, selected }) => {
 
         {!isSuspect && data.image && <img src={data.image} alt="clue" style={{ width: '100%', height: '100%', display: 'block', pointerEvents: 'none', objectFit: 'cover' }} />}
         {isNote && <div style={{ padding: '15px', fontSize: '14px', textAlign: 'center' }}>{data.label}</div>}
-        {isBoardText && <div style={{ color: '#fff', width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: `${dynamicFontSize}px`, fontWeight: '900', textAlign: 'center', textTransform: 'uppercase', textShadow: '2px 2px 4px rgba(0,0,0,0.5)' }}>{data.label}</div>}
+        
+        {isBoardText && (
+          <div style={{ 
+            color: '#fff', 
+            width: '100%', 
+            height: '100%', 
+            display: 'flex', 
+            alignItems: 'center', 
+            justifyContent: 'center', 
+            fontSize: `${dynamicFontSize}px`, 
+            fontWeight: '900', 
+            textAlign: 'center', 
+            textTransform: 'uppercase', 
+            textShadow: '2px 2px 4px rgba(0,0,0,0.5)',
+            lineHeight: 1.1 
+          }}>
+            {data.label}
+          </div>
+        )}
         
         {data.timestamp && <div style={{ position: 'absolute', bottom: 5, right: 5, fontSize: '9px', background: 'rgba(0,0,0,0.6)', color: 'white', padding: '2px 4px', borderRadius: '3px' }}>📅 {data.timestamp}</div>}
       </div>
@@ -137,12 +174,22 @@ function Board() {
   const [isTimelineMode, setIsTimelineMode] = useState(false);
   const [drawSource, setDrawSource] = useState(null);
   
+  // Sidebar Toggle State
+  const [isSidebarOpen, setSidebarOpen] = useState(true);
+
+  // Locker State
+  const [isLockerOpen, setIsLockerOpen] = useState(true);
+
+  // Zoom State
+  const [zoomedImage, setZoomedImage] = useState(null);
+  
   // Image Upload State
   const [uploadTarget, setUploadTarget] = useState(null);
   const suspectUploadRef = useRef(null);
+  const evidenceUploadRef = useRef(null);
   const loadFileRef = useRef(null);
   
-  const { fitView } = useReactFlow();
+  const { fitView, setCenter } = useReactFlow();
   const logEndRef = useRef(null);
 
   // --- INITIALIZATION ---
@@ -203,26 +250,49 @@ function Board() {
     e.target.value = ""; 
   };
 
+  const handleNewEvidenceUpload = (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      
+      const name = prompt("Name this evidence:", "New Evidence");
+      if (!name) {
+          e.target.value = "";
+          return;
+      }
+
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+          addNode('physical', name, ev.target.result);
+      };
+      reader.readAsDataURL(file);
+      e.target.value = "";
+  };
+
+  const focusOnNode = (node) => {
+     setCenter(node.position.x + 100, node.position.y + 50, { zoom: 1.2, duration: 1000 });
+  };
+
   // --- TIMELINE LOGIC ---
   const filteredNodes = useMemo(() => {
-    // Inject callbacks into data whenever nodes are rendered
     const nodesWithCallbacks = nodes.map(n => ({
       ...n,
       data: {
         ...n.data,
         onToggleStatus: handleToggleStatus,
         onEditNode: handleEditNode,
-        onSuspectImage: () => { setUploadTarget(n.id); suspectUploadRef.current.click(); }
+        onSuspectImage: () => { setUploadTarget(n.id); suspectUploadRef.current.click(); },
+        onMagnify: (img) => setZoomedImage(img)
       }
     }));
 
     if (!isTimelineMode) return nodesWithCallbacks;
     
+    // Updated Logic: Filter out nodes without timestamps and sort including time
     return nodesWithCallbacks
-      .filter(n => n.data.type !== 'group')
+      .filter(n => n.data.type !== 'group' && n.data.timestamp && n.data.timestamp.trim() !== "")
       .sort((a, b) => {
-        const dateA = new Date(a.data.timestamp || 0);
-        const dateB = new Date(b.data.timestamp || 0);
+        const dateA = new Date(a.data.timestamp);
+        const dateB = new Date(b.data.timestamp);
         return dateA - dateB;
       })
       .map((n, index) => ({
@@ -257,11 +327,17 @@ function Board() {
     if (type === 'suspect') {
         extraData = { alibi: prompt("Suspect Alibi:"), associates: prompt("Known Associates:"), image };
     }
+    
+    // Updated Prompt for Time and Date
+    const timestampPrompt = (type !== 'group' && type !== 'boardText') 
+        ? prompt("Enter Date/Time (e.g. 2026-01-27 14:00)\nLeave empty to omit from timeline:", "2026-01-01") 
+        : null;
+
     const node = {
       id, type: 'evidence', position: { x: 400, y: 300 },
       data: { 
         label, type, image, status: 'OPEN', 
-        timestamp: (type !== 'group' && type !== 'boardText') ? prompt("Date (YYYY-MM-DD):", "2026-01-01") : null, 
+        timestamp: timestampPrompt, // Stores the date/time string or null
         ...extraData 
       },
       style: type === 'group' ? { width: 400, height: 400, background: themes.cork.group } : 
@@ -350,15 +426,46 @@ function Board() {
     if(newName) setCaseName(newName.toUpperCase().replace(/\s/g, '-'));
   };
 
+  const evidenceList = nodes.filter(n => n.data.image);
+
   return (
     <div style={{ display: "flex", width: "100vw", height: "100vh", backgroundColor: themes.cork.board, overflow: 'hidden' }}>
       
       <input type="file" ref={suspectUploadRef} onChange={handleSuspectImageUpload} hidden accept="image/*" />
+      <input type="file" ref={evidenceUploadRef} onChange={handleNewEvidenceUpload} hidden accept="image/*" />
       <input type="file" ref={loadFileRef} onChange={loadCaseFile} hidden accept=".json" />
 
+      {/* ZOOM MODAL */}
+      {zoomedImage && (
+        <div onClick={() => setZoomedImage(null)} style={{ 
+            position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', 
+            backgroundColor: 'rgba(0,0,0,0.9)', zIndex: 9999, display: 'flex', 
+            alignItems: 'center', justifyContent: 'center', cursor: 'zoom-out'
+        }}>
+            <img src={zoomedImage} style={{ maxWidth: '95%', maxHeight: '95%', border: '2px solid white', boxShadow: '0 0 30px black' }} alt="Zoomed Evidence" />
+        </div>
+      )}
+
       {/* SIDEBAR */}
-      <div style={{ width: "320px", backgroundColor: themes.cork.panel, color: "#ecf0f1", padding: "15px", display: "flex", flexDirection: "column", zIndex: 10, boxShadow: '5px 0 15px rgba(0,0,0,0.3)' }}>
-        <h2 style={{ fontSize: '16px', fontWeight: '900', marginBottom: '5px', letterSpacing: '1px' }}>CASE EVIDENCE BOARD v11.0</h2>
+      <div style={{ 
+          width: "320px", 
+          backgroundColor: themes.cork.panel, 
+          color: "#ecf0f1", 
+          padding: "15px", 
+          display: isSidebarOpen ? "flex" : "none", 
+          flexDirection: "column", 
+          zIndex: 10, 
+          boxShadow: '5px 0 15px rgba(0,0,0,0.3)' 
+      }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
+            <h2 style={{ fontSize: '16px', fontWeight: '900', letterSpacing: '1px', margin: 0 }}>CASE EVIDENCE BOARD v11.3</h2>
+            <button 
+                onClick={() => setSidebarOpen(false)} 
+                title="Collapse Sidebar"
+                style={{ background: 'transparent', border: 'none', color: '#ccc', cursor: 'pointer', fontSize: '14px' }}>
+                ◀
+            </button>
+        </div>
         
         <div style={{ background: 'rgba(0,0,0,0.5)', padding: '10px', borderRadius: '6px', marginBottom: '15px', borderLeft: '4px solid #f1c40f' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -380,17 +487,42 @@ function Board() {
           <button onClick={() => addNode('note', prompt("Note:"))} style={btnStyle}>+ NOTE</button>
           <button onClick={() => addNode('group', prompt("Zone Name:"))} style={{ ...btnStyle, backgroundColor: '#8e44ad' }}>+ ZONE</button>
           <button onClick={() => addNode('suspect', prompt("Suspect Name:"))} style={{ ...btnStyle, backgroundColor: '#2c3e50' }}>+ SUSPECT</button>
-          <label style={{ ...btnStyle, backgroundColor: "#3b82f6", gridColumn: 'span 2' }}> 📷 ADD PHOTO EVIDENCE
-            <input type="file" hidden onChange={(e) => {
-               const r = new FileReader(); r.onload = (ev) => addNode('physical', 'Evidence', ev.target.result);
-               r.readAsDataURL(e.target.files[0]);
-            }} />
-          </label>
+          <button onClick={() => evidenceUploadRef.current.click()} style={{ ...btnStyle, backgroundColor: "#3b82f6", gridColumn: 'span 2' }}> 
+            📷 ADD PHOTO EVIDENCE
+          </button>
         </div>
         
         <button onClick={() => setIsDrawMode(!isDrawMode)} style={{ ...btnStyle, backgroundColor: isDrawMode ? "#d63031" : "#444" }}>
             {isDrawMode ? "STOP DRAWING" : "🖋️ DRAW LEAD"}
         </button>
+
+        {/* EVIDENCE LOCKER */}
+        <div style={{ marginTop: '10px', border: '1px solid #444', borderRadius: '4px', background: '#1f2937' }}>
+            <div 
+                onClick={() => setIsLockerOpen(!isLockerOpen)} 
+                style={{ padding: '8px', cursor: 'pointer', fontSize: '11px', fontWeight: 'bold', display: 'flex', justifyContent: 'space-between', background: '#374151', borderTopLeftRadius: '4px', borderTopRightRadius: '4px' }}
+            >
+                <span>📂 EVIDENCE LOCKER ({evidenceList.length})</span>
+                <span>{isLockerOpen ? '▼' : '▶'}</span>
+            </div>
+            {isLockerOpen && (
+                <div style={{ maxHeight: '150px', overflowY: 'auto', padding: '5px' }}>
+                    {evidenceList.length === 0 && <div style={{fontSize:'10px', color:'#777', padding:'5px'}}>No photo evidence yet.</div>}
+                    {evidenceList.map(n => (
+                        <div 
+                            key={n.id} 
+                            onClick={() => focusOnNode(n)}
+                            style={{ fontSize: '11px', padding: '6px', cursor: 'pointer', borderBottom: '1px solid #333', color: '#ccc', display: 'flex', alignItems: 'center' }}
+                            onMouseEnter={(e) => e.target.style.background = '#4b5563'}
+                            onMouseLeave={(e) => e.target.style.background = 'transparent'}
+                        >
+                            <span style={{ marginRight: '5px' }}>{n.data.type === 'suspect' ? '👤' : '📄'}</span> 
+                            {n.data.label}
+                        </div>
+                    ))}
+                </div>
+            )}
+        </div>
 
         <div style={{ borderTop: '1px solid #444', margin: '10px 0', padding: '10px 0', display: 'flex', gap: '5px' }}>
              <button onClick={saveCaseFile} style={{...btnStyle, marginBottom: 0, backgroundColor: '#16a085'}}>💾 SAVE CASE</button>
@@ -405,6 +537,15 @@ function Board() {
           </div>
         </div>
       </div>
+
+      {/* FLOATING OPEN MENU BUTTON */}
+      {!isSidebarOpen && (
+         <div style={{ position: 'absolute', top: 15, left: 15, zIndex: 100 }}>
+            <button onClick={() => setSidebarOpen(true)} style={{ ...btnStyle, width: 'auto', padding: '10px 15px', boxShadow: '0 4px 6px rgba(0,0,0,0.3)' }}>
+                ☰ MENU
+            </button>
+         </div>
+      )}
 
       {/* BOARD AREA */}
       <div style={{ flexGrow: 1, position: 'relative' }}>
